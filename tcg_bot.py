@@ -1,17 +1,18 @@
 """
-TCG BOT - VERSION CON DIAGNOSTICO
+TCG BOT - VERSION PARA PYTHON 3.14
 """
 
 import logging
 import requests
 import json
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 
-# Configuracion de logging DETALLADO
+# Configuracion de logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.DEBUG
+    level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
@@ -19,15 +20,13 @@ TOKEN = "8604982984:AAGztYBQfjcUT0GnFQlgogamubCjNoPtZ7c"
 GOOGLE_URL = "https://script.google.com/macros/s/AKfycbwaY1MURBCqgReCYJK7IvNPimWxSRw7tC3gkVGiP-ljxZosa8-PiULLwcGmsXAA3TH0/exec"
 
 def api_call(action, data=None):
-    """Llamada a Google Sheets con LOGS"""
+    """Llamada a Google Sheets"""
     try:
         payload = {"action": action}
         if data:
             payload.update(data)
         
         logger.info("ENVIANDO a %s", GOOGLE_URL)
-        logger.info("Payload: %s", json.dumps(payload))
-        
         response = requests.post(
             GOOGLE_URL, 
             json=payload, 
@@ -35,40 +34,31 @@ def api_call(action, data=None):
             headers={'Content-Type': 'application/json'}
         )
         
-        logger.info("Status Code: %s", response.status_code)
-        logger.info("Respuesta: %s", response.text[:500])
+        logger.info("Status: %s", response.status_code)
         
         if response.status_code == 200:
-            result = response.json()
-            return result
+            return response.json()
         else:
-            logger.error("Error HTTP: %s", response.status_code)
             return {"success": False, "error": "HTTP " + str(response.status_code), "productos": []}
             
     except Exception as e:
-        logger.error("EXCEPCION: %s", str(e))
+        logger.error("Error: %s", str(e))
         return {"success": False, "error": str(e), "productos": []}
 
 async def start(update: Update, context):
     """Inicio"""
     user = update.effective_user
     
-    # TEST: Llamar a API inmediatamente
-    logger.info("=" * 50)
-    logger.info("TEST DE CONEXION AL INICIAR")
+    # TEST de conexion
     test_result = api_call("get_productos")
-    logger.info("Test result: %s", test_result)
-    logger.info("=" * 50)
-    
     productos_count = len(test_result.get('productos', []))
     
     mensaje = (
         "🐕‍🦺 *TCG Pet Store* 🐈\n\n"
         f"Hola {user.first_name}!\n\n"
         f"📊 *Diagnostico:*\n"
-        f"Productos en Google Sheets: `{productos_count}`\n"
-        f"Conexion API: {'✅ OK' if test_result.get('success') else '❌ ERROR'}\n\n"
-        f"{'✅ Sistema funcionando correctamente' if productos_count > 0 else '⚠️ No se encontraron productos. Verifica Google Sheets.'}\n\n"
+        f"Productos: `{productos_count}`\n"
+        f"Conexion: {'✅ OK' if test_result.get('success') else '❌ ERROR'}\n\n"
         "¿Que deseas hacer?"
     )
     
@@ -92,22 +82,9 @@ async def button_handler(update: Update, context):
         result = api_call("get_productos")
         productos = result.get('productos', [])
         
-        logger.info("Productos obtenidos: %s", len(productos))
-        
         if not productos:
-            error_msg = result.get('error', 'Sin error especifico')
-            mensaje_error = (
-                "❌ *No hay productos*\n\n"
-                f"Error: `{error_msg}`\n"
-                f"Success: `{result.get('success')}`\n\n"
-                "*Verifica:*\n"
-                "1. ¿La hoja 'productos' tiene datos?\n"
-                "2. ¿La Web App esta publicada como 'Cualquiera'?\n"
-                "3. ¿Las columnas tienen los nombres correctos?\n\n"
-                "ID Hoja: `1ddtqz7_pozoY4hFXmTFhLv81m5ZNtH0lOoC6SkDNNJk`"
-            )
             await query.edit_message_text(
-                mensaje_error,
+                "❌ *No hay productos*\n\nVerifica Google Sheets.",
                 parse_mode='Markdown',
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔄 Reintentar", callback_data='prod')],
@@ -137,11 +114,7 @@ async def button_handler(update: Update, context):
             "*🧪 TEST DE CONEXION*\n\n"
             f"Success: `{result.get('success')}`\n"
             f"Productos: `{len(result.get('productos', []))}`\n"
-            f"Error: `{result.get('error', 'Ninguno')}`\n\n"
-            "Respuesta completa:\n"
-            "```\n"
-            f"{json.dumps(result, indent=2)[:800]}\n"
-            "```"
+            f"Error: `{result.get('error', 'Ninguno')}`"
         )
         await query.edit_message_text(
             mensaje_test,
@@ -173,17 +146,23 @@ async def button_handler(update: Update, context):
     elif data == 'back':
         await start(update, context)
 
-def main():
+async def main_async():
+    """Funcion principal async"""
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler('start', start))
     app.add_handler(CallbackQueryHandler(button_handler))
     
-    logger.info("=" * 50)
-    logger.info("BOT INICIADO - VERSION CON DIAGNOSTICO")
-    logger.info("=" * 50)
+    logger.info("BOT INICIADO")
+    print("🚀 Bot iniciado!")
     
-    print("🚀 Bot iniciado con diagnostico!")
-    app.run_polling()
+    # Iniciar polling
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    
+    # Mantener corriendo
+    while True:
+        await asyncio.sleep(3600)  # Dormir 1 hora
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main_async())
