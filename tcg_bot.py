@@ -1,5 +1,5 @@
 """
-TCG BOT - VERSION PARA PYTHON 3.14
+TCG BOT - VERSION ESTABLE PARA RENDER
 """
 
 import logging
@@ -8,8 +8,9 @@ import json
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
+from telegram.error import Conflict
 
-# Configuracion de logging
+# Configuracion
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -26,7 +27,6 @@ def api_call(action, data=None):
         if data:
             payload.update(data)
         
-        logger.info("ENVIANDO a %s", GOOGLE_URL)
         response = requests.post(
             GOOGLE_URL, 
             json=payload, 
@@ -34,22 +34,18 @@ def api_call(action, data=None):
             headers={'Content-Type': 'application/json'}
         )
         
-        logger.info("Status: %s", response.status_code)
-        
         if response.status_code == 200:
             return response.json()
         else:
             return {"success": False, "error": "HTTP " + str(response.status_code), "productos": []}
             
     except Exception as e:
-        logger.error("Error: %s", str(e))
         return {"success": False, "error": str(e), "productos": []}
 
 async def start(update: Update, context):
     """Inicio"""
     user = update.effective_user
     
-    # TEST de conexion
     test_result = api_call("get_productos")
     productos_count = len(test_result.get('productos', []))
     
@@ -152,17 +148,38 @@ async def main_async():
     app.add_handler(CommandHandler('start', start))
     app.add_handler(CallbackQueryHandler(button_handler))
     
-    logger.info("BOT INICIADO")
-    print("🚀 Bot iniciado!")
+    logger.info("=" * 50)
+    logger.info("BOT INICIADO - ESPERANDO MENSAJES")
+    logger.info("=" * 50)
+    print("🚀 Bot iniciado y funcionando!")
     
-    # Iniciar polling
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
-    
-    # Mantener corriendo
-    while True:
-        await asyncio.sleep(3600)  # Dormir 1 hora
+    try:
+        # Iniciar polling con manejo de conflictos
+        await app.initialize()
+        await app.start()
+        
+        # Configurar polling con drop_pending_updates=True
+        await app.updater.start_polling(drop_pending_updates=True)
+        
+        # Mantener corriendo indefinidamente
+        while True:
+            await asyncio.sleep(3600)
+            
+    except Conflict as e:
+        logger.error("Conflicto detectado: %s", e)
+        logger.error("Otra instancia del bot esta corriendo. Deteniendo...")
+        return
+    except Exception as e:
+        logger.error("Error: %s", e)
+        raise
+    finally:
+        await app.stop()
+        await app.shutdown()
 
 if __name__ == '__main__':
-    asyncio.run(main_async())
+    try:
+        asyncio.run(main_async())
+    except KeyboardInterrupt:
+        print("\n🛑 Bot detenido por usuario")
+    except Exception as e:
+        print(f"\n❌ Error fatal: {e}")
