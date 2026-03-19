@@ -1,5 +1,5 @@
 """
-TCG BOT - VERSIÓN CON DIAGNÓSTICO
+TCG BOT - VERSION CON DIAGNOSTICO
 """
 
 import logging
@@ -8,10 +8,10 @@ import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 
-# Configuración de logging DETALLADO
+# Configuracion de logging DETALLADO
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.DEBUG  # CAMBIADO A DEBUG para ver todo
+    level=logging.DEBUG
 )
 logger = logging.getLogger(__name__)
 
@@ -25,8 +25,8 @@ def api_call(action, data=None):
         if data:
             payload.update(data)
         
-        logger.info(f"🔍 ENVIANDO a {GOOGLE_URL}")
-        logger.info(f"📦 Payload: {json.dumps(payload)}")
+        logger.info("ENVIANDO a %s", GOOGLE_URL)
+        logger.info("Payload: %s", json.dumps(payload))
         
         response = requests.post(
             GOOGLE_URL, 
@@ -35,50 +35,49 @@ def api_call(action, data=None):
             headers={'Content-Type': 'application/json'}
         )
         
-        logger.info(f"📥 Status Code: {response.status_code}")
-        logger.info(f"📥 Respuesta cruda: {response.text[:500]}")
+        logger.info("Status Code: %s", response.status_code)
+        logger.info("Respuesta: %s", response.text[:500])
         
         if response.status_code == 200:
             result = response.json()
-            logger.info(f"✅ JSON parseado: {json.dumps(result)[:500]}")
             return result
         else:
-            logger.error(f"❌ Error HTTP: {response.status_code}")
-            return {"success": False, "error": f"HTTP {response.status_code}", "productos": []}
+            logger.error("Error HTTP: %s", response.status_code)
+            return {"success": False, "error": "HTTP " + str(response.status_code), "productos": []}
             
     except Exception as e:
-        logger.error(f"❌ EXCEPCIÓN: {str(e)}")
+        logger.error("EXCEPCION: %s", str(e))
         return {"success": False, "error": str(e), "productos": []}
 
 async def start(update: Update, context):
     """Inicio"""
     user = update.effective_user
     
-    # TEST: Llamar a API inmediatamente y mostrar resultado
+    # TEST: Llamar a API inmediatamente
     logger.info("=" * 50)
-    logger.info("TEST DE CONEXIÓN AL INICIAR")
+    logger.info("TEST DE CONEXION AL INICIAR")
     test_result = api_call("get_productos")
-    logger.info(f"Test result: {test_result}")
+    logger.info("Test result: %s", test_result)
     logger.info("=" * 50)
     
     productos_count = len(test_result.get('productos', []))
     
+    mensaje = (
+        "🐕‍🦺 *TCG Pet Store* 🐈\n\n"
+        f"Hola {user.first_name}!\n\n"
+        f"📊 *Diagnostico:*\n"
+        f"Productos en Google Sheets: `{productos_count}`\n"
+        f"Conexion API: {'✅ OK' if test_result.get('success') else '❌ ERROR'}\n\n"
+        f"{'✅ Sistema funcionando correctamente' if productos_count > 0 else '⚠️ No se encontraron productos. Verifica Google Sheets.'}\n\n"
+        "¿Que deseas hacer?"
+    )
+    
     await update.message.reply_text(
-        f"""🐕‍🦺 *TCG Pet Store* 🐈
-
-Hola {user.first_name}!
-
-📊 *Diagnóstico:*
-Productos en Google Sheets: `{productos_count}`
-Conexión API: {'✅ OK' if test_result.get('success') else '❌ ERROR'}
-
-{'✅ Sistema funcionando correctamente' if productos_count > 0 else '⚠️ No se encontraron productos. Verifica Google Sheets.'}
-
-¿Qué deseas hacer?""",
+        mensaje,
         parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🛒 Ver Productos", callback_data='prod')],
-            [InlineKeyboardButton("🔄 Test Conexión", callback_data='test')],
+            [InlineKeyboardButton("🔄 Test Conexion", callback_data='test')],
             [InlineKeyboardButton("📊 Ver Stock", callback_data='stock')]
         ])
     )
@@ -93,22 +92,22 @@ async def button_handler(update: Update, context):
         result = api_call("get_productos")
         productos = result.get('productos', [])
         
-        logger.info(f"Productos obtenidos: {len(productos)}")
+        logger.info("Productos obtenidos: %s", len(productos))
         
         if not productos:
-            error_msg = result.get('error', 'Sin error específico')
+            error_msg = result.get('error', 'Sin error especifico')
+            mensaje_error = (
+                "❌ *No hay productos*\n\n"
+                f"Error: `{error_msg}`\n"
+                f"Success: `{result.get('success')}`\n\n"
+                "*Verifica:*\n"
+                "1. ¿La hoja 'productos' tiene datos?\n"
+                "2. ¿La Web App esta publicada como 'Cualquiera'?\n"
+                "3. ¿Las columnas tienen los nombres correctos?\n\n"
+                "ID Hoja: `1ddtqz7_pozoY4hFXmTFhLv81m5ZNtH0lOoC6SkDNNJk`"
+            )
             await query.edit_message_text(
-                f"""❌ *No hay productos*
-
-Error: `{error_msg}`
-Success: `{result.get('success')}`
-
-*Verifica:*
-1. ¿La hoja "productos" tiene datos?
-2. ¿La Web App está publicada como "Cualquiera"?
-3. ¿Las columnas tienen los nombres correctos?
-
-ID Hoja: `1ddtqz7_pozoY4hFXmTFhLv81m5ZNtH0lOoC6SkDNNJk`""",
+                mensaje_error,
                 parse_mode='Markdown',
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔄 Reintentar", callback_data='prod')],
@@ -118,7 +117,7 @@ ID Hoja: `1ddtqz7_pozoY4hFXmTFhLv81m5ZNtH0lOoC6SkDNNJk`""",
             return
         
         text = "*🛒 Productos disponibles:*\n\n"
-        for p in productos[:10]:  # Limitar a 10 para no saturar
+        for p in productos[:10]:
             if p.get('stock', 0) > 0:
                 precio = f"${p['precio']:,}".replace(',', '.')
                 text += f"✅ *{p['nombre']}*\n💰 {precio} | 📦 {p['stock']} u.\n\n"
@@ -134,11 +133,57 @@ ID Hoja: `1ddtqz7_pozoY4hFXmTFhLv81m5ZNtH0lOoC6SkDNNJk`""",
     
     elif data == 'test':
         result = api_call("get_productos")
+        mensaje_test = (
+            "*🧪 TEST DE CONEXION*\n\n"
+            f"Success: `{result.get('success')}`\n"
+            f"Productos: `{len(result.get('productos', []))}`\n"
+            f"Error: `{result.get('error', 'Ninguno')}`\n\n"
+            "Respuesta completa:\n"
+            "```\n"
+            f"{json.dumps(result, indent=2)[:800]}\n"
+            "```"
+        )
         await query.edit_message_text(
-            f"""*🧪 TEST DE CONEXIÓN*
+            mensaje_test,
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("« Volver", callback_data='back')]
+            ])
+        )
+    
+    elif data == 'stock':
+        result = api_call("get_stats")
+        stats = result.get('estadisticas', {})
+        prod = stats.get('productos', {})
+        
+        mensaje_stock = (
+            "*📊 Stock*\n\n"
+            f"Total: `{prod.get('total', 0)}`\n"
+            f"Disponibles: `{prod.get('disponibles', 0)}`\n"
+            f"Agotados: `{prod.get('agotados', 0)}`"
+        )
+        await query.edit_message_text(
+            mensaje_stock,
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("« Volver", callback_data='back')]
+            ])
+        )
+    
+    elif data == 'back':
+        await start(update, context)
 
-Success: `{result.get('success')}`
-Productos: `{len(result.get('productos', []))}`
-Error: `{result.get('error', 'Ninguno')}`
+def main():
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler('start', start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    
+    logger.info("=" * 50)
+    logger.info("BOT INICIADO - VERSION CON DIAGNOSTICO")
+    logger.info("=" * 50)
+    
+    print("🚀 Bot iniciado con diagnostico!")
+    app.run_polling()
 
-Respuesta completa:
+if __name__ == '__main__':
+    main()
