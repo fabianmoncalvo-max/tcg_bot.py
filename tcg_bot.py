@@ -18,7 +18,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TOKEN = "8604982984:AAGztYBQfjcUT0GnFQlgogamubCjNoPtZ7c"
-GOOGLE_URL = "https://script.google.com/macros/s/AKfycbwaY1MURBCqgReCYJK7IvNPimWxSRw7tC3gkVGiP-ljxZosa8-PiULLwcGmsXAA3TH0/exec"
+GOOGLE_URL = "https://script.google.com/macros/s/AKfycbzMNJM8INFE8k7mHh4Bz_7mnLeJ1I8CkkUlHRyIUytE3LDGpkvwmwLMHOKiAddeqlu3/exec"
 
 def api_call(action, data=None):
     """Llamada a Google Sheets"""
