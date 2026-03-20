@@ -6,6 +6,7 @@ Version profesional con todas las funcionalidades
 import logging
 import requests
 import json
+import asyncio  # <-- AGREGADO para Python 3.14
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 
@@ -547,7 +548,14 @@ async def error_handler(update: Update, context):
         pass
 
 def main():
-    """Funcion principal"""
+    """Funcion principal - CORREGIDA PARA PYTHON 3.14"""
+    # Crear explícitamente el event loop para Python 3.14+
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
     app = Application.builder().token(TOKEN).build()
     
     app.add_handler(CommandHandler('start', start))
@@ -559,7 +567,8 @@ def main():
     logger.info("=" * 50)
     print("🚀 Bot iniciado!")
     
-    app.run_polling(drop_pending_updates=True)
+    # Usar close_loop=False para evitar problemas con el event loop
+    app.run_polling(drop_pending_updates=True, close_loop=False)
 
 if __name__ == '__main__':
     main()
