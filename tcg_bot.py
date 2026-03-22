@@ -1,12 +1,12 @@
 """
-TCG PET STORE - BOT DE VENTAS DEMO COMPLETO
-Version profesional con todas las funcionalidades
+TCG PET STORE - BOT COMPLETO Y ESTABLE
+Version corregida con manejo de errores y checkout
 """
 
 import logging
 import requests
 import json
-import asyncio  # <-- AGREGADO para Python 3.14
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 
@@ -18,7 +18,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TOKEN = "8604982984:AAGztYBQfjcUT0GnFQlgogamubCjNoPtZ7c"
-GOOGLE_URL = "https://script.google.com/macros/s/AKfycbzMNJM8INFE8k7mHh4Bz_7mnLeJ1I8CkkUlHRyIUytE3LDGpkvwmwLMHOKiAddeqlu3/exec"
+GOOGLE_URL = "https://script.google.com/macros/s/AKfycbwaY1MURBCqgReCYJK7IvNPimWxSRw7tC3gkVGiP-ljxZosa8-PiULLwcGmsXAA3TH0/exec"
 
 def api_call(action, data=None):
     """Llamada a Google Sheets"""
@@ -44,8 +44,12 @@ def api_call(action, data=None):
         return {"success": False, "error": str(e), "productos": []}
 
 async def start(update: Update, context):
-    """Inicio - Menu principal completo"""
+    """Inicio - Menu principal"""
     user = update.effective_user
+    
+    # Inicializar carrito si no existe
+    if 'carrito' not in context.user_data:
+        context.user_data['carrito'] = []
     
     mensaje = (
         "🐕‍🦺 *¡Bienvenido a TCG Pet Store!* 🐈\n\n"
@@ -77,36 +81,35 @@ async def start(update: Update, context):
     )
 
 async def menu_handler(update: Update, context):
-    """Maneja todos los botones del menu"""
+    """Maneja todos los botones"""
     query = update.callback_query
     await query.answer()
     data = query.data
     
     try:
-        if data == 'ver_productos':
-            await mostrar_categorias(update, context)
-        elif data.startswith('cat_'):
+        handlers = {
+            'ver_productos': mostrar_categorias,
+            'consultar_stock': menu_stock,
+            'ver_pagos': mostrar_pagos,
+            'ver_envios': mostrar_envios,
+            'info_empresa': info_empresa,
+            'demo_admin': demo_admin,
+            'volver_inicio': volver_inicio,
+            'ver_carrito': mostrar_carrito,
+            'checkout': finalizar_compra,
+            'vaciar_carrito': vaciar_carrito,
+            'ver_inventario': mostrar_inventario,
+        }
+        
+        # Manejar prefijos
+        if data.startswith('cat_'):
             await mostrar_productos_categoria(update, context)
         elif data.startswith('prod_'):
             await detalle_producto(update, context)
         elif data.startswith('cant_'):
             await agregar_carrito(update, context)
-        elif data == 'consultar_stock':
-            await menu_stock(update, context)
-        elif data == 'ver_inventario':
-            await mostrar_inventario(update, context)
-        elif data == 'ver_pagos':
-            await mostrar_pagos(update, context)
-        elif data == 'ver_envios':
-            await mostrar_envios(update, context)
-        elif data == 'info_empresa':
-            await info_empresa(update, context)
-        elif data == 'demo_admin':
-            await demo_admin(update, context)
-        elif data == 'volver_inicio':
-            await volver_inicio(update, context)
-        elif data == 'ver_carrito':
-            await mostrar_carrito(update, context)
+        elif data in handlers:
+            await handlers[data](update, context)
         else:
             await query.edit_message_text(
                 "⚠️ Opción no reconocida.",
@@ -124,13 +127,10 @@ async def menu_handler(update: Update, context):
         )
 
 async def mostrar_categorias(update: Update, context):
-    """Muestra categorias de productos"""
+    """Muestra categorias"""
     query = update.callback_query
     
-    mensaje = (
-        "🛍️ *Nuestro Catálogo*\n\n"
-        "¿Para quién buscas alimento?"
-    )
+    mensaje = "🛍️ *Nuestro Catálogo*\n\n¿Para quién buscas alimento?"
     
     keyboard = [
         [InlineKeyboardButton("🐕 Perros", callback_data='cat_Perros')],
@@ -348,14 +348,64 @@ async def mostrar_carrito(update: Update, context):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+async def finalizar_compra(update: Update, context):
+    """Finaliza la compra"""
+    query = update.callback_query
+    carrito = context.user_data.get('carrito', [])
+    
+    if not carrito:
+        await query.edit_message_text(
+            "🛒 Tu carrito está vacío",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("« Volver", callback_data='volver_inicio')
+            ]])
+        )
+        return
+    
+    total = sum(item['subtotal'] for item in carrito)
+    total_fmt = f"${total:,}".replace(',', '.')
+    
+    resumen = "🛒 *RESUMEN DE TU PEDIDO*\n\n"
+    for i, item in enumerate(carrito, 1):
+        subtotal_fmt = f"${item['subtotal']:,}".replace(',', '.')
+        resumen += f"{i}. {item['nombre']}\n"
+        resumen += f"   {item['cantidad']} x ${item['precio']:,} = {subtotal_fmt}\n\n".replace(',', '.')
+    
+    resumen += f"💰 *TOTAL A PAGAR:* {total_fmt}\n\n"
+    resumen += "✅ Pedido registrado. Un asesor se contactará para coordinar el pago y envío."
+    
+    # Guardar venta en Google Sheets (opcional)
+    # api_call("registrar_venta", {...})
+    
+    context.user_data['carrito'] = []
+    
+    await query.edit_message_text(
+        resumen,
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🏠 Menú Principal", callback_data='volver_inicio')
+        ]])
+    )
+
+async def vaciar_carrito(update: Update, context):
+    """Vacia el carrito"""
+    query = update.callback_query
+    context.user_data['carrito'] = []
+    
+    await query.edit_message_text(
+        "🗑️ *Carrito vaciado*",
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🛒 Ver Productos", callback_data='ver_productos')],
+            [InlineKeyboardButton("« Menú Principal", callback_data='volver_inicio')]
+        ])
+    )
+
 async def menu_stock(update: Update, context):
     """Menu de consulta de stock"""
     query = update.callback_query
     
-    mensaje = (
-        "📦 *Consulta de Stock en Tiempo Real*\n\n"
-        "Puedo verificar disponibilidad al instante."
-    )
+    mensaje = "📦 *Consulta de Stock*\n\nPuedo verificar disponibilidad al instante."
     
     keyboard = [
         [InlineKeyboardButton("📊 Ver inventario completo", callback_data='ver_inventario')],
@@ -397,19 +447,19 @@ async def mostrar_pagos(update: Update, context):
     query = update.callback_query
     
     mensaje = (
-        "💳 *Métodos de Pago Disponibles*\n\n"
-        "*Opciones con descuento:*\n"
-        "• 💵 *Efectivo* → 10% OFF (retiro en local)\n"
+        "💳 *Métodos de Pago*\n\n"
+        "*Con descuento:*\n"
+        "• 💵 *Efectivo* → 10% OFF\n"
         "• 📲 *Transferencia* → 5% OFF\n\n"
         "*Otras opciones:*\n"
-        "• 💳 Mercado Pago (tarjeta/QR)\n"
+        "• 💳 Mercado Pago\n"
         "• 🏦 Depósito bancario\n\n"
-        "*Garantía:* Si tu mascota no come el alimento en 7 días, *te devolvemos el 100%*."
+        "*Garantía:* 7 días o devolución"
     )
     
     keyboard = [
         [InlineKeyboardButton("🛒 Ir a Comprar", callback_data='ver_productos')],
-        [InlineKeyboardButton("« Volver al inicio", callback_data='volver_inicio')]
+        [InlineKeyboardButton("« Volver", callback_data='volver_inicio')]
     ]
     
     await query.edit_message_text(
@@ -423,21 +473,17 @@ async def mostrar_envios(update: Update, context):
     query = update.callback_query
     
     mensaje = (
-        "🚚 *Envíos y Retiro - Formosa*\n\n"
+        "🚚 *Envíos y Retiro*\n\n"
         "*Formosa Capital:*\n"
-        "• 🏍️ *Moto mensajería:* $2.500 (2-4 horas)\n"
-        "• 🚗 *Delivery propio:* $1.800 (24-48 hs)\n"
-        "• 🏪 *Retiro en local:* GRATIS\n"
-        "  📍 Av. 9 de Julio 1234, Formosa\n\n"
-        "*Interior:*\n"
-        "• 🚌 Terminal: $3.500 - $5.500\n"
-        "• 📦 Correo Argentino: A convenir\n\n"
-        "🎁 *ENVÍO GRATIS* en compras +$50.000"
+        "• 🏍️ Moto: $2.500 (2-4 hs)\n"
+        "• 🚗 Delivery: $1.800\n"
+        "• 🏪 Retiro: GRATIS\n\n"
+        "*Promo:* Gratis en +$50.000"
     )
     
     keyboard = [
         [InlineKeyboardButton("🛒 Ir a Comprar", callback_data='ver_productos')],
-        [InlineKeyboardButton("« Volver al inicio", callback_data='volver_inicio')]
+        [InlineKeyboardButton("« Volver", callback_data='volver_inicio')]
     ]
     
     await query.edit_message_text(
@@ -452,17 +498,12 @@ async def info_empresa(update: Update, context):
     
     mensaje = (
         "🏭 *TIT CAN GROSS (TCG)*\n\n"
-        "*15 años nutriendo mascotas argentinas*\n\n"
-        "🥩 *Nuestra fórmula:*\n"
-        "• Proteínas de origen animal certificadas\n"
-        "• Granos seleccionados de la región\n"
-        "• Sin subproductos de dudosa procedencia\n"
-        "• Omega 3 y 6 naturales\n\n"
-        "*Líneas:*\n"
-        "🏆 *Master Crock* → Calidad-precio\n"
-        "⭐ *Upper Crock* → Máximo rendimiento\n\n"
-        "📍 *Fábrica:* Formosa, Argentina\n"
-        "✅ *Autorizado SENASA*"
+        "15 años en Formosa, Argentina\n\n"
+        "🥩 Proteínas certificadas\n"
+        "🌾 Granos locales\n"
+        "✅ SENASA autorizado\n\n"
+        "*Master Crock:* Calidad-precio\n"
+        "*Upper Crock:* Premium"
     )
     
     keyboard = [
@@ -477,7 +518,7 @@ async def info_empresa(update: Update, context):
     )
 
 async def demo_admin(update: Update, context):
-    """Panel de administracion demo"""
+    """Panel de administracion"""
     query = update.callback_query
     
     result = api_call("get_stats")
@@ -486,24 +527,19 @@ async def demo_admin(update: Update, context):
     ventas = stats.get('ventas', {})
     
     mensaje = (
-        "📊 *PANEL DE ADMINISTRACIÓN - DEMO*\n\n"
-        "*Este es el panel que verías como dueño:*\n\n"
-        "📦 *Inventario:*\n"
-        f"• Total productos: `{prod.get('total', 0)}`\n"
-        f"• Disponibles: `{prod.get('disponibles', 0)}` ✅\n"
-        f"• Agotados: `{prod.get('agotados', 0)}` ❌\n"
-        f"• Valor stock: `${prod.get('valor_inventario', 0):,}`\n\n"
-        "💰 *Ventas:*\n"
-        f"• Transacciones: `{ventas.get('total', 0)}`\n"
-        f"• Facturación: `${ventas.get('monto_total', 0):,}`\n\n"
-        "👥 *Clientes:* `{stats.get('clientes', 0)}`\n\n"
-        "*Todo se actualiza en tiempo real desde Google Sheets*"
+        "📊 *PANEL ADMIN - DEMO*\n\n"
+        f"📦 Productos: `{prod.get('total', 0)}`\n"
+        f"✅ Disponibles: `{prod.get('disponibles', 0)}`\n"
+        f"❌ Agotados: `{prod.get('agotados', 0)}`\n"
+        f"💰 Valor: `${prod.get('valor_inventario', 0):,}`\n\n"
+        f"💵 Ventas: `{ventas.get('total', 0)}`\n"
+        f"📈 Facturado: `${ventas.get('monto_total', 0):,}`\n\n"
+        "Todo se actualiza en tiempo real"
     ).replace(',', '.')
     
     keyboard = [
-        [InlineKeyboardButton("🔄 Actualizar Datos", callback_data='demo_admin')],
-        [InlineKeyboardButton("📦 Gestionar Stock", callback_data='ver_inventario')],
-        [InlineKeyboardButton("« Volver al inicio", callback_data='volver_inicio')]
+        [InlineKeyboardButton("🔄 Actualizar", callback_data='demo_admin')],
+        [InlineKeyboardButton("« Volver", callback_data='volver_inicio')]
     ]
     
     await query.edit_message_text(
@@ -516,10 +552,7 @@ async def volver_inicio(update: Update, context):
     """Vuelve al menu principal"""
     query = update.callback_query
     
-    mensaje = (
-        "🐕‍🦺 *TCG Pet Store* 🐈\n\n"
-        "¿En qué puedo ayudarte ahora?"
-    )
+    mensaje = "🐕‍🦺 *TCG Pet Store* 🐈\n\n¿En qué puedo ayudarte?"
     
     keyboard = [
         [InlineKeyboardButton("🛒 Ver Productos", callback_data='ver_productos')],
@@ -542,33 +575,39 @@ async def error_handler(update: Update, context):
     try:
         if update and update.effective_message:
             await update.effective_message.reply_text(
-                "😅 Ups, algo salió mal. Intenta de nuevo con /start"
+                "😅 Ups, algo salió mal. Intenta /start"
             )
     except:
         pass
 
-def main():
-    """Funcion principal - CORREGIDA PARA PYTHON 3.14"""
-    # Crear explícitamente el event loop para Python 3.14+
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    
+async def main_async():
+    """Funcion principal async"""
     app = Application.builder().token(TOKEN).build()
     
     app.add_handler(CommandHandler('start', start))
     app.add_handler(CallbackQueryHandler(menu_handler))
     app.add_error_handler(error_handler)
     
-    logger.info("=" * 50)
-    logger.info("TCG BOT - VERSION COMPLETA INICIADA")
-    logger.info("=" * 50)
+    logger.info("BOT INICIADO")
     print("🚀 Bot iniciado!")
     
-    # Usar close_loop=False para evitar problemas con el event loop
-    app.run_polling(drop_pending_updates=True, close_loop=False)
+    try:
+        await app.initialize()
+        await app.start()
+        await app.updater.start_polling(drop_pending_updates=True)
+        
+        # Mantener corriendo
+        while True:
+            await asyncio.sleep(3600)
+            
+    except Exception as e:
+        logger.error("Error: %s", e)
+        raise
+    finally:
+        await app.stop()
 
 if __name__ == '__main__':
-    main()
+    try:
+        asyncio.run(main_async())
+    except KeyboardInterrupt:
+        print("\n🛑 Bot detenido")
