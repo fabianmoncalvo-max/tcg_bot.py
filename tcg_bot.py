@@ -1,71 +1,83 @@
 """
 TCG PET STORE - BOT ESTABLE v3.0
-Compatible con Python 3.14 y Render
+Compatible con Python 3.11+ y Render
 """
 
 import logging
 import requests
 import json
 import asyncio
-import sys
+import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
-from telegram.error import Conflict, NetworkError
 
-# Configuración de logging
+# Configuración de logging detallado
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO,
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    level=logging.DEBUG  # Cambiar a INFO en producción
 )
 logger = logging.getLogger(__name__)
 
-# CONFIGURACIÓN - VERIFICAR ESTOS DATOS
+# CONFIGURACIÓN - Verificar estas variables
 TOKEN = "8604982984:AAGztYBQfjcUT0GnFQlgogamubCjNoPtZ7c"
-GOOGLE_URL = "https://script.google.com/macros/library/d/1I6G4hoPgOZVoypp5SzBntSdrjZ76mY9fscWHPnjgy-5SX4bYgSmaRE0u/7"
+GOOGLE_URL = "https://script.google.com/macros/s/AKfycbwaY1MURBCqgReCYJK7IvNPimWxSRw7tC3gkVGiP-ljxZosa8-PiULLwcGmsXAA3TH0/exec"
+
+# Validar configuración al inicio
+logger.info("=" * 60)
+logger.info("INICIANDO BOT TCG PET STORE")
+logger.info(f"Google URL: {GOOGLE_URL[:50]}...")
+logger.info("=" * 60)
 
 def api_call(action, data=None, max_retries=3):
-    """Llamada a Google Sheets con reintentos"""
+    """
+    Llama a Google Sheets API con reintentos y logging detallado
+    """
     payload = {"action": action}
     if data:
         payload.update(data)
     
     for attempt in range(max_retries):
         try:
-            logger.info(f"API Call: {action} (intento {attempt + 1})")
+            logger.debug(f"Intento {attempt + 1}/{max_retries} - Action: {action}")
+            logger.debug(f"Payload: {json.dumps(payload)}")
+            
             response = requests.post(
                 GOOGLE_URL, 
                 json=payload, 
                 timeout=30,
-                headers={'Content-Type': 'application/json'}
+                headers={
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
             )
             
-            logger.info(f"Response status: {response.status_code}")
+            logger.debug(f"Response Status: {response.status_code}")
+            logger.debug(f"Response Headers: {dict(response.headers)}")
+            logger.debug(f"Response Body: {response.text[:500]}")
             
             if response.status_code == 200:
                 try:
                     result = response.json()
-                    logger.info(f"Success: {result.get('success', False)}")
+                    logger.info(f"✅ API call exitoso: {action} - Success: {result.get('success')}")
                     return result
                 except json.JSONDecodeError as e:
-                    logger.error(f"JSON decode error: {e}")
-                    logger.error(f"Response text: {response.text[:200]}")
-                    return {"success": False, "error": "Invalid JSON", "productos": []}
+                    logger.error(f"❌ Error decodificando JSON: {e}")
+                    logger.error(f"Texto recibido: {response.text[:200]}")
+                    return {"success": False, "error": "JSON invalido", "productos": []}
             else:
-                logger.error(f"HTTP Error: {response.status_code}")
+                logger.error(f"❌ HTTP Error {response.status_code}: {response.text[:200]}")
                 if attempt < max_retries - 1:
                     continue
                 return {"success": False, "error": f"HTTP {response.status_code}", "productos": []}
                 
         except requests.exceptions.Timeout:
-            logger.error(f"Timeout en intento {attempt + 1}")
+            logger.error(f"⏱️ Timeout en intento {attempt + 1}")
             if attempt < max_retries - 1:
                 continue
             return {"success": False, "error": "Timeout", "productos": []}
+            
         except Exception as e:
-            logger.error(f"Error: {str(e)}")
+            logger.error(f"❌ Excepción: {str(e)}")
             if attempt < max_retries - 1:
                 continue
             return {"success": False, "error": str(e), "productos": []}
@@ -73,43 +85,40 @@ def api_call(action, data=None, max_retries=3):
     return {"success": False, "error": "Max retries exceeded", "productos": []}
 
 async def start(update: Update, context):
-    """Inicio del bot"""
+    """Handler de inicio con diagnóstico de conexión"""
     user = update.effective_user
     
-    # Inicializar carrito
-    if 'carrito' not in context.user_data:
-        context.user_data['carrito'] = []
-    
-    # Test de conexión
-    logger.info("Testeando conexión con Google Sheets...")
+    # Test de conexión inmediato
+    logger.info(f"Usuario {user.first_name} inició sesión. Testeando conexión...")
     test_result = api_call("get_productos")
     
     productos_count = len(test_result.get('productos', []))
     conexion_ok = test_result.get('success', False) and productos_count > 0
     
-    logger.info(f"Productos encontrados: {productos_count}")
-    logger.info(f"Conexión OK: {conexion_ok}")
-    
-    mensaje = (
-        f"🐕‍🦺 *¡Bienvenido a TCG Pet Store!* 🐈\n\n"
-        f"Hola {user.first_name}, soy *Luna*, tu asesora.\n\n"
-        f"Vendo alimentos *Master Crock* y *Upper Crock* de TCG.\n\n"
-    )
+    logger.info(f"Test de conexión: Success={test_result.get('success')}, Productos={productos_count}")
     
     if conexion_ok:
-        mensaje += f"✅ *Sistema online*\n📦 {productos_count} productos disponibles\n\n"
+        mensaje = (
+            f"🐕‍🦺 *¡Bienvenido a TCG Pet Store!* 🐈\n\n"
+            f"Hola {user.first_name}, soy *Luna*.\n\n"
+            f"✅ *Conexión establecida*\n"
+            f"📦 {productos_count} productos disponibles\n\n"
+            f"¿Qué deseas hacer?"
+        )
     else:
-        mensaje += f"⚠️ *Advertencia:*\nError: `{test_result.get('error', 'Desconocido')}`\n\n"
-    
-    mensaje += "¿Qué deseas hacer?"
+        error_msg = test_result.get('error', 'Desconocido')
+        mensaje = (
+            f"🐕‍🦺 *TCG Pet Store* 🐈\n\n"
+            f"Hola {user.first_name}.\n\n"
+            f"⚠️ *Problema de conexión*\n"
+            f"Error: `{error_msg}`\n\n"
+            f"El catálogo puede no estar disponible temporalmente."
+        )
     
     keyboard = [
         [InlineKeyboardButton("🛒 Ver Productos", callback_data='ver_productos')],
-        [InlineKeyboardButton("📊 Ver Stock", callback_data='consultar_stock')],
-        [InlineKeyboardButton("💳 Pagos", callback_data='ver_pagos')],
-        [InlineKeyboardButton("🚚 Envíos", callback_data='ver_envios')],
-        [InlineKeyboardButton("ℹ️ Sobre TCG", callback_data='info_empresa')],
-        [InlineKeyboardButton("📊 Admin", callback_data='demo_admin')]
+        [InlineKeyboardButton("📊 Ver Stock", callback_data='ver_stock')],
+        [InlineKeyboardButton("ℹ️ Información", callback_data='info')]
     ]
     
     await update.message.reply_text(
@@ -119,217 +128,161 @@ async def start(update: Update, context):
     )
 
 async def menu_handler(update: Update, context):
-    """Maneja todas las callbacks"""
+    """Handler central de callbacks"""
     query = update.callback_query
     await query.answer()
     data = query.data
     
-    logger.info(f"Callback recibida: {data}")
+    logger.info(f"Callback recibido: {data}")
     
     handlers = {
-        'ver_productos': mostrar_categorias,
-        'consultar_stock': menu_stock,
-        'ver_pagos': mostrar_pagos,
-        'ver_envios': mostrar_envios,
-        'info_empresa': info_empresa,
-        'demo_admin': demo_admin,
-        'volver_inicio': volver_inicio,
-        'ver_carrito': mostrar_carrito,
-        'checkout': finalizar_compra,
-        'vaciar_carrito': vaciar_carrito,
-        'ver_inventario': mostrar_inventario,
+        'ver_productos': mostrar_productos,
+        'ver_stock': mostrar_stock,
+        'info': mostrar_info,
+        'volver': start_callback,
     }
     
-    try:
-        if data.startswith('cat_'):
-            await mostrar_productos_categoria(update, context)
-        elif data.startswith('prod_'):
-            await detalle_producto(update, context)
-        elif data.startswith('cant_'):
-            await agregar_carrito(update, context)
-        elif data in handlers:
-            await handlers[data](update, context)
-        else:
-            logger.warning(f"Callback desconocida: {data}")
-            await query.edit_message_text(
-                "⚠️ Opción no reconocida.",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("« Volver", callback_data='volver_inicio')
-                ]])
-            )
-    except Exception as e:
-        logger.error(f"Error en handler: {str(e)}", exc_info=True)
+    handler = handlers.get(data)
+    if handler:
+        await handler(update, context)
+    else:
+        logger.warning(f"Callback no reconocido: {data}")
         await query.edit_message_text(
-            f"😅 Error: {str(e)[:100]}",
+            "⚠️ Opción no disponible",
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("« Volver", callback_data='volver_inicio')
+                InlineKeyboardButton("« Volver", callback_data='volver')
             ]])
         )
 
-async def mostrar_categorias(update: Update, context):
-    """Muestra categorías"""
+async def mostrar_productos(update: Update, context):
+    """Muestra lista de productos"""
     query = update.callback_query
     
+    await query.edit_message_text("⏳ Cargando productos...")
+    
+    result = api_call("get_productos")
+    productos = result.get('productos', [])
+    
+    if not productos:
+        error = result.get('error', 'Sin error específico')
+        await query.edit_message_text(
+            f"❌ *No se pudieron cargar los productos*\n\n"
+            f"Error: `{error}`\n\n"
+            f"Por favor, intenta más tarde.",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔄 Reintentar", callback_data='ver_productos'),
+                InlineKeyboardButton("« Volver", callback_data='volver')
+            ]])
+        )
+        return
+    
+    mensaje = "*🛒 Productos Disponibles*\n\n"
+    
+    for p in productos:
+        if p.get('stock', 0) > 0:
+            precio = f"${p['precio']:,}".replace(',', '.')
+            mensaje += f"✅ *{p['nombre']}*\n"
+            mensaje += f"💰 {precio} | 📦 {p['stock']} u.\n\n"
+    
     await query.edit_message_text(
-        "🛍️ *¿Para quién buscas alimento?*",
+        mensaje,
         parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🐕 Perros", callback_data='cat_Perros')],
-            [InlineKeyboardButton("🐈 Gatos", callback_data='cat_Gatos')],
-            [InlineKeyboardButton("⭐ Destacados", callback_data='cat_destacados')],
-            [InlineKeyboardButton("« Volver", callback_data='volver_inicio')]
+            [InlineKeyboardButton("🔄 Actualizar", callback_data='ver_productos')],
+            [InlineKeyboardButton("« Volver", callback_data='volver')]
         ])
     )
 
-async def mostrar_productos_categoria(update: Update, context):
-    """Muestra productos por categoría"""
+async def mostrar_stock(update: Update, context):
+    """Muestra estadísticas de stock"""
     query = update.callback_query
-    categoria = query.data.replace('cat_', '')
     
-    logger.info(f"Solicitando productos de: {categoria}")
-    
-    if categoria == 'destacados':
-        result = api_call("get_productos", {"solo_stock": True})
-        productos = [p for p in result.get('productos', []) if p.get('destacado')]
-        titulo = "⭐ Destacados"
-    else:
-        result = api_call("get_productos", {"categoria": categoria})
-        productos = result.get('productos', [])
-        titulo = f"🐕🐈 {categoria}"
-    
-    logger.info(f"Productos encontrados: {len(productos)}")
-    
-    if not productos:
-        error_detail = result.get('error', 'Sin error específico')
-        await query.edit_message_text(
-            f"❌ *No hay productos*\n\nError: `{error_detail}`\n\n"
-            f"Verifica que la hoja 'productos' tenga datos.",
-            parse_mode='Markdown',
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("« Volver", callback_data='ver_productos')
-            ]])
-        )
-        return
-    
-    mensaje = f"*{titulo}*\n\n"
-    keyboard = []
-    
-    for p in productos:
-        stock_emoji = "✅" if p['stock'] > 0 else "❌"
-        precio = f"${p['precio']:,}".replace(',', '.')
-        mensaje += f"{stock_emoji} *{p['nombre']}*\n💰 {precio} | 📦 {p['stock']} u.\n\n"
-        
-        if p['stock'] > 0:
-            keyboard.append([InlineKeyboardButton(
-                f"🛒 {p['nombre'][:25]}...", 
-                callback_data=f'prod_{p["sku"]}'
-            )])
-    
-    keyboard.append([InlineKeyboardButton("« Volver", callback_data='ver_productos')])
-    
-    await query.edit_message_text(
-        mensaje,
-        parse_mode='Markdown',
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-async def detalle_producto(update: Update, context):
-    """Muestra detalle de producto"""
-    query = update.callback_query
-    sku = query.data.replace('prod_', '')
-    
-    result = api_call("get_producto", {"sku": sku})
-    
-    if not result.get('success'):
-        await query.edit_message_text("❌ Producto no encontrado")
-        return
-    
-    p = result['producto']
-    context.user_data['producto_actual'] = p
-    
-    stock_emoji = "🟢" if p['stock'] > 10 else "🟡" if p['stock'] > 0 else "🔴"
-    precio = f"${p['precio']:,}".replace(',', '.')
+    result = api_call("get_stats")
+    stats = result.get('estadisticas', {})
+    prod = stats.get('productos', {})
     
     mensaje = (
-        f"*{p['nombre']}* {stock_emoji}\n\n"
-        f"💰 *Precio:* {precio}\n"
-        f"📦 *Stock:* {p['stock']} u.\n\n"
-        f"_{p['descripcion']}_\n\n"
+        "*📊 Inventario*\n\n"
+        f"Total: {prod.get('total', 0)}\n"
+        f"Disponibles: {prod.get('disponibles', 0)}\n"
+        f"Agotados: {prod.get('agotados', 0)}\n"
+        f"Valor: ${prod.get('valor_inventario', 0):,}".replace(',', '.')
     )
-    
-    keyboard = []
-    if p['stock'] > 0:
-        mensaje += "*¿Cuántas unidades?*"
-        cantidades = [1, 2, 3] if p['stock'] >= 3 else list(range(1, p['stock'] + 1))
-        row = [InlineKeyboardButton(str(c), callback_data=f'cant_{c}') for c in cantidades]
-        keyboard.append(row)
-    
-    keyboard.append([InlineKeyboardButton("« Volver", callback_data='ver_productos')])
     
     await query.edit_message_text(
         mensaje,
         parse_mode='Markdown',
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("« Volver", callback_data='volver')
+        ]])
     )
 
-async def agregar_carrito(update: Update, context):
-    """Agrega al carrito"""
+async def mostrar_info(update: Update, context):
+    """Muestra información de la empresa"""
     query = update.callback_query
-    cantidad = int(query.data.replace('cant_', ''))
-    p = context.user_data.get('producto_actual')
-    
-    if not p:
-        return
-    
-    item = {
-        'sku': p['sku'],
-        'nombre': p['nombre'],
-        'precio': p['precio'],
-        'cantidad': cantidad,
-        'subtotal': p['precio'] * cantidad
-    }
-    
-    if 'carrito' not in context.user_data:
-        context.user_data['carrito'] = []
-    
-    carrito = context.user_data['carrito']
-    existente = next((i for i in carrito if i['sku'] == item['sku']), None)
-    
-    if existente:
-        existente['cantidad'] += cantidad
-        existente['subtotal'] = existente['precio'] * existente['cantidad']
-    else:
-        carrito.append(item)
-    
-    total = sum(i['subtotal'] for i in carrito)
     
     mensaje = (
-        f"✅ *Agregado:*\n{item['nombre']} x{cantidad}\n\n"
-        f"🛒 Carrito: {len(carrito)} items\n"
-        f"💰 Total: ${total:,}"
-    ).replace(',', '.')
-    
-    keyboard = [
-        [InlineKeyboardButton("🛍️ Seguir comprando", callback_data='ver_productos')],
-        [InlineKeyboardButton("📋 Ver carrito", callback_data='ver_carrito')],
-        [InlineKeyboardButton("💳 Finalizar", callback_data='checkout')],
-        [InlineKeyboardButton("« Inicio", callback_data='volver_inicio')]
-    ]
+        "*🏭 TIT CAN GROSS (TCG)*\n\n"
+        "15 años en Formosa, Argentina\n\n"
+        "✅ Alimentos balanceados premium\n"
+        "✅ Master Crock & Upper Crock\n"
+        "✅ Stock inmediato"
+    )
     
     await query.edit_message_text(
         mensaje,
         parse_mode='Markdown',
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("« Volver", callback_data='volver')
+        ]])
     )
 
-async def mostrar_carrito(update: Update, context):
-    """Muestra carrito"""
+async def start_callback(update: Update, context):
+    """Vuelve al menú principal"""
     query = update.callback_query
-    carrito = context.user_data.get('carrito', [])
+    # Simular nuevo mensaje
+    await query.edit_message_text("Cargando menú...")
+    await start(update, context)
+
+async def error_handler(update: Update, context):
+    """Manejo global de errores"""
+    logger.error(f"Error: {context.error}", exc_info=True)
+    try:
+        if update and update.effective_message:
+            await update.effective_message.reply_text(
+                "😅 Ocurrió un error. Intenta /start"
+            )
+    except:
+        pass
+
+async def main():
+    """Función principal async"""
+    application = Application.builder().token(TOKEN).build()
     
-    if not carrito:
-        await query.edit_message_text(
-            "🛒 Carrito vacío",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("« Volver", callback_data='volver_inicio')
-            ]
+    application.add_handler(CommandHandler('start', start))
+    application.add_handler(CallbackQueryHandler(menu_handler))
+    application.add_error_handler(error_handler)
+    
+    logger.info("🚀 Bot iniciado y escuchando...")
+    
+    await application.initialize()
+    await application.start()
+    
+    # Usar polling con configuración estable
+    await application.updater.start_polling(
+        drop_pending_updates=True,
+        allowed_updates=Update.ALL_TYPES
+    )
+    
+    # Mantener vivo
+    while True:
+        await asyncio.sleep(3600)
+
+if __name__ == '__main__':
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Bot detenido por usuario")
+    except Exception as e:
+        logger.error(f"Error fatal: {e}")
