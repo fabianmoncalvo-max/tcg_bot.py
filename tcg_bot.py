@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # CONFIGURACIÓN - VERIFICAR ESTOS DATOS
 TOKEN = "8604982984:AAGztYBQfjcUT0GnFQlgogamubCjNoPtZ7c"
-GOOGLE_URL = "https://script.google.com/macros/s/AKfycbwaY1MURBCqgReCYJK7IvNPimWxSRw7tC3gkVGiP-ljxZosa8-PiULLwcGmsXAA3TH0/exec"
+GOOGLE_URL = "https://script.google.com/macros/library/d/1I6G4hoPgOZVoypp5SzBntSdrjZ76mY9fscWHPnjgy-5SX4bYgSmaRE0u/7"
 
 def api_call(action, data=None, max_retries=3):
     """Llamada a Google Sheets con reintentos"""
